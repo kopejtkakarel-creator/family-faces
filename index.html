@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#14161a">
+<title>Family Faces</title>
+<style>
+/* Layout: one-screen phone app — header, tab content, bottom tab bar */
+:root{
+  --bg:#f3f4f2; --surface:#ffffff; --fg:#1b1d1a; --muted:#646a62; --line:#d9ddd5;
+  --accent:#2f7d5b; --accent-fg:#ffffff; --known:#2f7d5b; --unknown:#c0562f;
+  --font:"Atkinson Hyperlegible",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#14161a; --surface:#1d2025; --fg:#e8ebe6; --muted:#9aa197; --line:#2e333a;
+  --accent:#5cc28f; --accent-fg:#0d1a13; --known:#5cc28f; --unknown:#f08a5d; color-scheme:dark}}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--fg);font:16px/1.45 var(--font);display:flex;flex-direction:column;
+  padding-top:env(safe-area-inset-top,0px)}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:12px max(16px,env(safe-area-inset-right,0px)) 10px max(16px,env(safe-area-inset-left,0px))}
+header h1{font-size:18px;margin:0;letter-spacing:.01em}
+#status{font:12px var(--mono);color:var(--muted);text-align:right}
+main{flex:1;min-height:0;overflow:auto;padding:0 max(16px,env(safe-area-inset-right,0px)) 16px max(16px,env(safe-area-inset-left,0px))}
+.view{display:flex;flex-direction:column;gap:12px}
+[hidden]{display:none!important}
+.stage{position:relative;width:100%;background:#000;border-radius:14px;overflow:hidden;aspect-ratio:3/4;max-height:68vh}
+.stage video,.stage img,.stage canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
+.stage .hint{position:absolute;inset:0;display:grid;place-items:center;color:#cfd3cc;text-align:center;padding:24px;font-size:15px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+button,.btn{font:inherit;font-size:15px;border:1px solid var(--line);background:var(--surface);color:var(--fg);
+  padding:10px 14px;border-radius:10px;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+button.primary,.btn.primary{background:var(--accent);color:var(--accent-fg);border-color:var(--accent);font-weight:700}
+button:disabled{opacity:.45;cursor:default}
+button:focus-visible,.btn:focus-within,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.btn input{display:none}
+label.slider{display:flex;align-items:center;gap:10px;font-size:14px;color:var(--muted);width:100%}
+label.slider input{flex:1}
+#hits{display:flex;flex-wrap:wrap;gap:6px;min-height:28px}
+.chip{font-size:14px;padding:4px 10px;border-radius:999px;border:1px solid var(--line);background:var(--surface)}
+.chip.k{border-color:var(--known);color:var(--known)}
+.chip.u{border-color:var(--unknown);color:var(--unknown)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:10px}
+.card h2{font-size:15px;margin:0}
+input[type=text]{font:inherit;width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--fg)}
+.people{display:flex;flex-direction:column;gap:8px}
+.person{display:flex;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:8px 10px}
+.person img{width:52px;height:52px;border-radius:10px;object-fit:cover;flex:none;background:var(--line)}
+.person .meta{flex:1;min-width:0}
+.person .name{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.person .sub{font-size:13px;color:var(--muted)}
+.person button{padding:8px 10px;font-size:14px}
+.note{font-size:13px;color:var(--muted);margin:0}
+#log{font:12px var(--mono);color:var(--muted);white-space:pre-wrap;margin:0}
+nav{display:flex;border-top:1px solid var(--line);background:var(--surface);
+  padding:0 env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px)}
+nav button{flex:1;border:0;border-radius:0;background:none;justify-content:center;padding:14px 8px;color:var(--muted);font-weight:700}
+nav button[aria-selected=true]{color:var(--accent);box-shadow:inset 0 3px 0 var(--accent)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&display=swap">
+</head>
+<body>
+<header>
+  <h1>Family Faces</h1>
+  <div id="status">Loading models…</div>
+</header>
+
+<main>
+  <!-- SCAN -->
+  <section id="v-scan" class="view">
+    <div class="stage" id="stage">
+      <video id="video" playsinline muted hidden></video>
+      <img id="still" alt="Captured photo" hidden>
+      <canvas id="overlay"></canvas>
+      <div class="hint" id="hint">Add people on the People tab, then start the camera.</div>
+    </div>
+    <div class="row">
+      <button class="primary" id="btnCam" disabled>Start camera</button>
+      <button id="btnFlip" hidden>Switch camera</button>
+      <label class="btn" id="btnSnap">Take photo<input id="snapInput" type="file" accept="image/*" capture="environment"></label>
+    </div>
+    <div id="hits" aria-live="polite"></div>
+    <label class="slider">Strict
+      <input id="thr" type="range" min="0.35" max="0.65" step="0.01" value="0.50">
+      Loose <span id="thrVal" style="font-family:var(--mono)">0.50</span></label>
+    <p class="note">Strict means fewer false matches but more “Unknown”. Distance below the threshold counts as a match.</p>
+  </section>
+
+  <!-- PEOPLE -->
+  <section id="v-people" class="view" hidden>
+    <div class="card">
+      <h2>Add a person</h2>
+      <input type="text" id="pname" placeholder="Name, e.g. Grandma Jana" autocomplete="off">
+      <label class="btn primary" id="btnAdd" style="justify-content:center">Choose photos<input id="photoInput" type="file" accept="image/*" multiple></label>
+      <p class="note">3–10 clear photos per person works best: different days, light and angles. Each photo should show only that person's face, or that person as the largest face.</p>
+      <pre id="log"></pre>
+    </div>
+    <div class="people" id="people"></div>
+    <div class="card">
+      <h2>Backup</h2>
+      <p class="note">Face data is stored only in this browser on this phone. Clearing browser data deletes it, so keep a backup.</p>
+      <div class="row">
+        <button id="btnExport">Export backup</button>
+        <label class="btn">Import backup<input id="importInput" type="file" accept="application/json,.json"></label>
+      </div>
+    </div>
+  </section>
+</main>
+
+<nav role="tablist">
+  <button role="tab" id="t-scan" aria-selected="true">Scan</button>
+  <button role="tab" id="t-people" aria-selected="false">People</button>
+</nav>
+
+<script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.15/dist/face-api.js"></script>
+<script>
+"use strict";
+const MODEL_URL = "https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.15/model/";
+const $ = id => document.getElementById(id);
+const status = t => $("status").textContent = t;
+
+/* ---------- storage (IndexedDB) ---------- */
+const DB = (() => {
+  let dbp;
+  const open = () => dbp ??= new Promise((res, rej) => {
+    const r = indexedDB.open("family-faces", 1);
+    r.onupgradeneeded = () => r.result.createObjectStore("people", { keyPath: "id" });
+    r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+  });
+  const tx = async (mode, fn) => { const db = await open(); return new Promise((res, rej) => {
+    const t = db.transaction("people", mode); const s = t.objectStore("people"); const out = fn(s);
+    t.oncomplete = () => res(out.result ?? out); t.onerror = () => rej(t.error); }); };
+  return {
+    all: () => tx("readonly", s => s.getAll()),
+    put: p => tx("readwrite", s => s.put(p)),
+    del: id => tx("readwrite", s => s.delete(id)),
+  };
+})();
+
+let people = [];     // {id, name, thumb, descriptors: number[][]}
+let matcher = null;
+
+function rebuildMatcher() {
+  const labeled = people.filter(p => p.descriptors.length).map(p =>
+    new faceapi.LabeledFaceDescriptors(p.name, p.descriptors.map(d => new Float32Array(d))));
+  matcher = labeled.length ? new faceapi.FaceMatcher(labeled, threshold()) : null;
+  $("btnCam").disabled = !modelsReady;
+  $("hint").textContent = people.length
+    ? "Tap Start camera, or Take photo." : "Add people on the People tab, then start the camera.";
+}
+const threshold = () => parseFloat($("thr").value);
+
+/* ---------- models ---------- */
+let modelsReady = false;
+async function loadModels() {
+  try {
+    await faceapi.tf.setBackend("webgl").catch(() => {});
+    await faceapi.tf.ready();
+    await Promise.all([
+      faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+      faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL),
+      faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+      faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
+    ]);
+    modelsReady = true;
+    status(`Ready · ${faceapi.tf.getBackend()}`);
+  } catch (e) {
+    status("Models failed to load");
+    $("hint").textContent = "Couldn't load the face models. Check the internet connection and reload.";
+    console.error(e);
+  }
+  rebuildMatcher();
+}
+
+/* ---------- enrollment ---------- */
+function fileToImage(file) {
+  return new Promise((res, rej) => { const img = new Image();
+    img.onload = () => res(img); img.onerror = rej; img.src = URL.createObjectURL(file); });
+}
+function cropThumb(img, box) {
+  const pad = box.width * 0.35, c = document.createElement("canvas"); c.width = c.height = 128;
+  const sx = Math.max(0, box.x - pad), sy = Math.max(0, box.y - pad);
+  const s = Math.min(box.width + 2 * pad, img.naturalWidth - sx, img.naturalHeight - sy);
+  c.getContext("2d").drawImage(img, sx, sy, s, s, 0, 0, 128, 128);
+  return c.toDataURL("image/jpeg", 0.8);
+}
+async function enroll(files) {
+  const name = $("pname").value.trim();
+  const log = $("log");
+  if (!name) { log.textContent = "Type a name first."; return; }
+  if (!modelsReady) { log.textContent = "Models are still loading. Try again in a moment."; return; }
+  let person = people.find(p => p.name.toLowerCase() === name.toLowerCase())
+    ?? { id: crypto.randomUUID(), name, thumb: null, descriptors: [] };
+  const lines = []; let added = 0;
+  for (const f of files) {
+    lines.push(`${f.name}: checking…`); log.textContent = lines.join("\n");
+    try {
+      const img = await fileToImage(f);
+      const dets = await faceapi.detectAllFaces(img, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 }))
+        .withFaceLandmarks().withFaceDescriptors();
+      URL.revokeObjectURL(img.src);
+      if (!dets.length) { lines[lines.length - 1] = `${f.name}: no face found, skipped`; continue; }
+      const best = dets.reduce((a, b) => a.detection.box.area > b.detection.box.area ? a : b);
+      person.descriptors.push(Array.from(best.descriptor));
+      person.thumb ??= cropThumb(img, best.detection.box);
+      added++;
+      lines[lines.length - 1] = `${f.name}: added` + (dets.length > 1 ? ` (largest of ${dets.length} faces)` : "");
+    } catch (e) { lines[lines.length - 1] = `${f.name}: couldn't read this image`; }
+    log.textContent = lines.join("\n");
+  }
+  if (added) {
+    await DB.put(person);
+    if (!people.includes(person)) people.push(person);
+    $("pname").value = "";
+    lines.push(`Saved ${added} photo${added > 1 ? "s" : ""} for ${person.name}.`);
+  }
+  log.textContent = lines.join("\n");
+  renderPeople(); rebuildMatcher();
+}
+function renderPeople() {
+  const box = $("people"); box.textContent = "";
+  if (!people.length) { const p = document.createElement("p"); p.className = "note";
+    p.textContent = "No one added yet."; box.append(p); return; }
+  for (const p of [...people].sort((a, b) => a.name.localeCompare(b.name))) {
+    const row = document.createElement("div"); row.className = "person";
+    const img = document.createElement("img"); img.alt = ""; if (p.thumb) img.src = p.thumb;
+    const meta = document.createElement("div"); meta.className = "meta";
+    const n = document.createElement("div"); n.className = "name"; n.textContent = p.name;
+    const s = document.createElement("div"); s.className = "sub"; s.textContent = `${p.descriptors.length} photo${p.descriptors.length === 1 ? "" : "s"}`;
+    meta.append(n, s);
+    const del = document.createElement("button"); del.textContent = "Delete";
+    del.onclick = async () => {
+      if (del.dataset.armed !== "1") { del.dataset.armed = "1"; del.textContent = "Confirm";
+        setTimeout(() => { del.dataset.armed = ""; del.textContent = "Delete"; }, 3000); return; }
+      await DB.del(p.id); people = people.filter(x => x !== p); renderPeople(); rebuildMatcher();
+    };
+    row.append(img, meta, del); box.append(row);
+  }
+}
+
+/* ---------- recognition + drawing ---------- */
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+function describe(dets) {
+  return dets.map(d => {
+    const m = matcher ? matcher.findBestMatch(d.descriptor) : null;
+    const known = m && m.label !== "unknown";
+    return { box: d.detection.box, known, label: known ? m.label : "Unknown", dist: m ? m.distance : 1 };
+  });
+}
+function draw(source, results) {
+  const cv = $("overlay"), stage = $("stage");
+  const sw = source.videoWidth || source.naturalWidth, sh = source.videoHeight || source.naturalHeight;
+  const W = stage.clientWidth, H = stage.clientHeight, dpr = devicePixelRatio || 1;
+  cv.width = W * dpr; cv.height = H * dpr;
+  const ctx = cv.getContext("2d"); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
+  if (!sw) return;
+  const k = Math.min(W / sw, H / sh), ox = (W - sw * k) / 2, oy = (H - sh * k) / 2;
+  const mirror = source === $("video") && facing === "user";
+  for (const r of results) {
+    let x = ox + r.box.x * k; const y = oy + r.box.y * k, w = r.box.width * k, h = r.box.height * k;
+    if (mirror) x = W - x - w;
+    const col = r.known ? css("--known") : css("--unknown");
+    ctx.lineWidth = 3; ctx.strokeStyle = col; ctx.strokeRect(x, y, w, h);
+    const text = r.known ? `${r.label} ${(1 - r.dist).toFixed(2)}` : "Unknown";
+    ctx.font = "700 15px system-ui,sans-serif";
+    const tw = ctx.measureText(text).width + 12, ty = y > 26 ? y - 24 : y + h;
+    ctx.fillStyle = col; ctx.fillRect(x - 1.5, ty, tw, 24);
+    ctx.fillStyle = "#fff"; ctx.fillText(text, x + 4.5, ty + 17);
+  }
+  const hits = $("hits"); hits.textContent = "";
+  for (const r of results) { const c = document.createElement("span");
+    c.className = "chip " + (r.known ? "k" : "u"); c.textContent = r.label; hits.append(c); }
+}
+
+/* ---------- live camera ---------- */
+let stream = null, facing = "environment", running = false;
+async function startCam() {
+  stopCam();
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facing, width: { ideal: 1280 }, height: { ideal: 960 } }, audio: false });
+  } catch (e) {
+    $("hint").hidden = false;
+    $("hint").textContent = "Camera not available here. Use Take photo instead, or open this page over https and allow camera access.";
+    return;
+  }
+  const v = $("video"); v.srcObject = stream; v.hidden = false; $("still").hidden = true; $("hint").hidden = true;
+  v.style.transform = facing === "user" ? "scaleX(-1)" : "";
+  await v.play();
+  $("btnCam").textContent = "Stop camera"; $("btnFlip").hidden = false;
+  running = true; loop();
+}
+function stopCam() {
+  running = false;
+  if (stream) stream.getTracks().forEach(t => t.stop()); stream = null;
+  $("video").hidden = true; $("btnCam").textContent = "Start camera"; $("btnFlip").hidden = true;
+}
+async function loop() {
+  const v = $("video");
+  const opts = new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.5 });
+  while (running) {
+    if (v.readyState >= 2) {
+      const dets = await faceapi.detectAllFaces(v, opts).withFaceLandmarks().withFaceDescriptors();
+      if (!running) break;
+      draw(v, describe(dets));
+    }
+    await new Promise(r => requestAnimationFrame(r));
+  }
+  draw($("video"), []);
+}
+
+/* ---------- single photo ---------- */
+async function analyzePhoto(file) {
+  if (!modelsReady) return;
+  stopCam();
+  const img = $("still"); img.src = URL.createObjectURL(file);
+  await img.decode(); img.hidden = false; $("hint").hidden = true;
+  status("Analyzing…");
+  const dets = await faceapi.detectAllFaces(img, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 }))
+    .withFaceLandmarks().withFaceDescriptors();
+  draw(img, describe(dets));
+  status(dets.length ? `${dets.length} face${dets.length > 1 ? "s" : ""} found` : "No faces found");
+}
+
+/* ---------- backup ---------- */
+function exportBackup() {
+  const blob = new Blob([JSON.stringify({ app: "family-faces", version: 1, people }, null, 0)], { type: "application/json" });
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+  a.download = `family-faces-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+async function importBackup(file) {
+  try {
+    const data = JSON.parse(await file.text());
+    if (data.app !== "family-faces" || !Array.isArray(data.people)) throw 0;
+    for (const p of data.people) {
+      if (typeof p.name !== "string" || !Array.isArray(p.descriptors)) continue;
+      const clean = { id: p.id || crypto.randomUUID(), name: p.name.slice(0, 80),
+        thumb: typeof p.thumb === "string" && p.thumb.startsWith("data:image/") ? p.thumb : null,
+        descriptors: p.descriptors.filter(d => Array.isArray(d) && d.length === 128).map(d => d.map(Number)) };
+      await DB.put(clean);
+    }
+    people = await DB.all(); renderPeople(); rebuildMatcher();
+    $("log").textContent = `Imported ${data.people.length} people.`;
+  } catch { $("log").textContent = "That file isn't a Family Faces backup."; }
+}
+
+/* ---------- wiring ---------- */
+function tab(name) {
+  for (const t of ["scan", "people"]) {
+    $("v-" + t).hidden = t !== name; $("t-" + t).setAttribute("aria-selected", t === name);
+  }
+  if (name !== "scan") stopCam();
+}
+$("t-scan").onclick = () => tab("scan");
+$("t-people").onclick = () => tab("people");
+$("btnCam").onclick = () => running ? stopCam() : startCam();
+$("btnFlip").onclick = () => { facing = facing === "user" ? "environment" : "user"; startCam(); };
+$("snapInput").onchange = e => { const f = e.target.files[0]; if (f) analyzePhoto(f); e.target.value = ""; };
+$("photoInput").onchange = e => { const fs = [...e.target.files]; if (fs.length) enroll(fs); e.target.value = ""; };
+$("importInput").onchange = e => { const f = e.target.files[0]; if (f) importBackup(f); e.target.value = ""; };
+$("btnExport").onclick = exportBackup;
+$("thr").oninput = () => { $("thrVal").textContent = threshold().toFixed(2); rebuildMatcher(); };
+document.addEventListener("visibilitychange", () => { if (document.hidden) stopCam(); });
+
+(async () => {
+  try { people = await DB.all(); } catch { people = []; }
+  renderPeople();
+  if (typeof faceapi === "undefined") { status("Library failed to load"); return; }
+  loadModels();
+})();
+</script>
+</body>
+</html>
