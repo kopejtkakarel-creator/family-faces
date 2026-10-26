@@ -55,11 +55,41 @@ input[type=text]{font:inherit;width:100%;padding:10px 12px;border-radius:10px;bo
 .person .sub{font-size:13px;color:var(--muted)}
 .person button{padding:8px 10px;font-size:14px}
 .note{font-size:13px;color:var(--muted);margin:0}
-#log{font:12px var(--mono);color:var(--muted);white-space:pre-wrap;margin:0}
+.poolgrid{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.poolgrid img{width:48px;height:48px;object-fit:cover;border-radius:8px;cursor:pointer;background:var(--line)}
+.pchip{display:inline-flex;align-items:center;gap:8px;padding:4px 10px 4px 4px;font-size:13px;max-width:100%}
+.pchip img{width:40px;height:40px;object-fit:cover;border-radius:8px;flex:none}
+.pchip span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#poolLog,#log{font:12px var(--mono);color:var(--muted);white-space:pre-wrap;margin:0}
 nav{display:flex;border-top:1px solid var(--line);background:var(--surface);
   padding:0 env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px)}
 nav button{flex:1;border:0;border-radius:0;background:none;justify-content:center;padding:14px 8px;color:var(--muted);font-weight:700}
 nav button[aria-selected=true]{color:var(--accent);box-shadow:inset 0 3px 0 var(--accent)}
+.faces{display:flex;gap:8px;flex-wrap:wrap}
+.faces button{padding:0;width:64px;height:64px;border:2px solid var(--line);border-radius:10px;overflow:hidden}
+.faces button[aria-pressed=true]{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent)}
+.faces img{width:100%;height:100%;object-fit:cover;display:block}
+.seg{display:flex;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--surface)}
+.seg button{flex:1;border:0;border-radius:0;justify-content:center;padding:10px 6px;font-size:14px;background:none}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button[aria-pressed=true]{background:var(--accent);color:var(--accent-fg);font-weight:700}
+.progress{height:6px;background:var(--line);border-radius:3px;overflow:hidden}
+#bar{height:100%;width:0;background:var(--accent)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px}
+button.hit{display:block;width:100%;padding:0;text-align:left;border-radius:10px;overflow:hidden}
+.hit .pic{position:relative;line-height:0}
+.hit img{display:block;width:100%;height:auto}
+.fbox{position:absolute;border:2px solid var(--known);border-radius:3px;pointer-events:none}
+.hit .cap{display:flex;justify-content:space-between;gap:6px;padding:5px 7px;font-size:12px}
+.hit .fn{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)}
+.hit .sc{font-family:var(--mono);color:var(--known);flex:none}
+#lb{position:fixed;inset:0;z-index:20;background:rgba(0,0,0,.92);color:#fff;display:flex;flex-direction:column;
+  padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px)}
+.lbbar{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 16px;font-size:14px}
+#lbName{min-width:0;overflow-wrap:anywhere}
+.lbstage{flex:1;min-height:0;display:grid;place-items:center;padding:0 16px 16px}
+.lbpic{position:relative;line-height:0}
+.lbpic img{display:block;max-width:calc(100vw - 32px);max-height:calc(100vh - 110px);max-height:calc(100dvh - 110px)}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -92,8 +122,54 @@ nav button[aria-selected=true]{color:var(--accent);box-shadow:inset 0 3px 0 var(
     <p class="note">Strict means fewer false matches but more “Unknown”. Distance below the threshold counts as a match.</p>
   </section>
 
+  <!-- SEARCH -->
+  <section id="v-search" class="view" hidden>
+    <div class="card">
+      <h2>Photos to sort</h2>
+      <div class="row">
+        <label class="btn primary">Select photos<input id="searchInput" type="file" accept="image/*" multiple></label>
+        <label class="btn">Choose folder<input id="dirInput" type="file" webkitdirectory multiple></label>
+        <button id="btnStop" hidden>Stop</button>
+        <button id="btnClear" hidden>Clear</button>
+      </div>
+      <div class="progress" id="progress" hidden><div id="bar"></div></div>
+      <p class="note" id="searchStatus">On the phone, open the folder in the picker and select all. If the picker limits how many you can pick, add them in batches; they add up.</p>
+      <p class="note">Photos are split by whether a face can be seen. Photos showing only hands or a body go to No faces.</p>
+    </div>
+    <div class="card">
+      <h2>Find one person <span style="font-weight:400;color:var(--muted)">(optional)</span></h2>
+      <label class="btn" style="justify-content:center">Choose a photo of the person<input id="refInput" type="file" accept="image/*"></label>
+      <div class="faces" id="refFaces"></div>
+      <p class="note" id="refNote">Shows only the photos where this face appears.</p>
+    </div>
+    <div class="seg" role="group" aria-label="Show" id="modeSeg">
+      <button data-mode="faces" aria-pressed="true">With faces<span id="cntFaces"></span></button>
+      <button data-mode="nofaces" aria-pressed="false">No faces<span id="cntNo"></span></button>
+      <button data-mode="match" aria-pressed="false">Person</button>
+    </div>
+    <label class="slider" id="sthrRow" hidden>Strict
+      <input id="sthr" type="range" min="0.35" max="0.65" step="0.01" value="0.50">
+      Loose <span id="sthrVal" style="font-family:var(--mono)">0.50</span></label>
+    <div class="row">
+      <p class="note" id="matchCount" style="flex:1;min-width:0">Select photos to sort them.</p>
+      <button id="btnZip" hidden>Save these as ZIP</button>
+    </div>
+    <div class="grid" id="results"></div>
+  </section>
+
   <!-- PEOPLE -->
   <section id="v-people" class="view" hidden>
+    <div class="card">
+      <h2>Reference pool <span style="font-weight:400;color:var(--muted)">(no names needed)</span></h2>
+      <p class="note">Every face in these photos is what Scan looks for. Add the ZIP you saved, or select photos.</p>
+      <div class="row">
+        <label class="btn primary">Add ZIP or photos<input id="poolInput" type="file" accept="image/*,.zip,application/zip" multiple></label>
+        <button id="btnPoolClear" hidden>Clear pool</button>
+      </div>
+      <p class="note" id="poolCount">The pool is empty.</p>
+      <div class="poolgrid" id="poolGrid"></div>
+      <pre id="poolLog"></pre>
+    </div>
     <div class="card">
       <h2>Add a person</h2>
       <input type="text" id="pname" placeholder="Name, e.g. Grandma Jana" autocomplete="off">
@@ -115,8 +191,14 @@ nav button[aria-selected=true]{color:var(--accent);box-shadow:inset 0 3px 0 var(
 
 <nav role="tablist">
   <button role="tab" id="t-scan" aria-selected="true">Scan</button>
+  <button role="tab" id="t-search" aria-selected="false">Search</button>
   <button role="tab" id="t-people" aria-selected="false">People</button>
 </nav>
+
+<div id="lb" role="dialog" aria-modal="true" aria-label="Matching photo" hidden>
+  <div class="lbbar"><span id="lbName"></span><button id="lbClose">Close</button></div>
+  <div class="lbstage"><div class="lbpic" id="lbPic"><img id="lbImg" alt=""></div></div>
+</div>
 
 <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.15/dist/face-api.js"></script>
 <script>
@@ -129,17 +211,20 @@ const status = t => $("status").textContent = t;
 const DB = (() => {
   let dbp;
   const open = () => dbp ??= new Promise((res, rej) => {
-    const r = indexedDB.open("family-faces", 1);
-    r.onupgradeneeded = () => r.result.createObjectStore("people", { keyPath: "id" });
+    const r = indexedDB.open("family-faces", 2);
+    r.onupgradeneeded = () => { const db = r.result;
+      for (const name of ["people", "pool"])
+        if (!db.objectStoreNames.contains(name)) db.createObjectStore(name, { keyPath: "id" }); };
     r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
   });
-  const tx = async (mode, fn) => { const db = await open(); return new Promise((res, rej) => {
-    const t = db.transaction("people", mode); const s = t.objectStore("people"); const out = fn(s);
+  const tx = async (store, mode, fn) => { const db = await open(); return new Promise((res, rej) => {
+    const t = db.transaction(store, mode); const s = t.objectStore(store); const out = fn(s);
     t.oncomplete = () => res(out.result ?? out); t.onerror = () => rej(t.error); }); };
   return {
-    all: () => tx("readonly", s => s.getAll()),
-    put: p => tx("readwrite", s => s.put(p)),
-    del: id => tx("readwrite", s => s.delete(id)),
+    all: (store = "people") => tx(store, "readonly", s => s.getAll()),
+    put: (p, store = "people") => tx(store, "readwrite", s => s.put(p)),
+    del: (id, store = "people") => tx(store, "readwrite", s => s.delete(id)),
+    clear: store => tx(store, "readwrite", s => s.clear()),
   };
 })();
 
@@ -151,8 +236,8 @@ function rebuildMatcher() {
     new faceapi.LabeledFaceDescriptors(p.name, p.descriptors.map(d => new Float32Array(d))));
   matcher = labeled.length ? new faceapi.FaceMatcher(labeled, threshold()) : null;
   $("btnCam").disabled = !modelsReady;
-  $("hint").textContent = people.length
-    ? "Tap Start camera, or Take photo." : "Add people on the People tab, then start the camera.";
+  $("hint").textContent = people.length || pool.length
+    ? "Tap Start camera, or Take photo." : "Add reference photos on the People tab, then start the camera.";
 }
 const threshold = () => parseFloat($("thr").value);
 
@@ -185,8 +270,9 @@ function fileToImage(file) {
 }
 function cropThumb(img, box) {
   const pad = box.width * 0.35, c = document.createElement("canvas"); c.width = c.height = 128;
+  const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
   const sx = Math.max(0, box.x - pad), sy = Math.max(0, box.y - pad);
-  const s = Math.min(box.width + 2 * pad, img.naturalWidth - sx, img.naturalHeight - sy);
+  const s = Math.min(box.width + 2 * pad, iw - sx, ih - sy);
   c.getContext("2d").drawImage(img, sx, sy, s, s, 0, 0, 128, 128);
   return c.toDataURL("image/jpeg", 0.8);
 }
@@ -247,10 +333,18 @@ function renderPeople() {
 /* ---------- recognition + drawing ---------- */
 const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 function describe(dets) {
+  const thr = threshold();
   return dets.map(d => {
+    const box = d.detection.box;
     const m = matcher ? matcher.findBestMatch(d.descriptor) : null;
-    const known = m && m.label !== "unknown";
-    return { box: d.detection.box, known, label: known ? m.label : "Unknown", dist: m ? m.distance : 1 };
+    if (m && m.label !== "unknown") return { box, known: true, label: m.label, dist: m.distance };
+    let best = null;
+    for (const e of poolIndex) {
+      const dd = faceapi.euclideanDistance(d.descriptor, e.desc);
+      if (dd < thr && (!best || dd < best.d)) best = { d: dd, photo: e.photo, fbox: e.box };
+    }
+    if (best) return { box, known: true, label: "Match", dist: best.d, pool: best.photo, poolBox: best.fbox };
+    return { box, known: false, label: "Unknown", dist: 1 };
   });
 }
 function draw(source, results) {
@@ -273,10 +367,26 @@ function draw(source, results) {
     ctx.fillStyle = col; ctx.fillRect(x - 1.5, ty, tw, 24);
     ctx.fillStyle = "#fff"; ctx.fillText(text, x + 4.5, ty + 17);
   }
+  const key = results.map(r => r.pool ? r.pool.id : r.label).join("|");
+  if (key === lastHitsKey) return;
+  lastHitsKey = key;
   const hits = $("hits"); hits.textContent = "";
-  for (const r of results) { const c = document.createElement("span");
-    c.className = "chip " + (r.known ? "k" : "u"); c.textContent = r.label; hits.append(c); }
+  for (const r of results) {
+    if (r.pool) {
+      const c = document.createElement("button"); c.type = "button"; c.className = "chip k pchip";
+      const im = document.createElement("img"); im.alt = ""; im.src = r.pool.thumb;
+      const t = document.createElement("span"); t.textContent = `${r.pool.name} · ${(1 - r.dist).toFixed(2)}`;
+      c.append(im, t);
+      const photo = r.pool, fbox = r.poolBox;
+      c.onclick = () => showPhoto(photo.thumb, photo.name, [fbox], false);
+      hits.append(c);
+    } else {
+      const c = document.createElement("span");
+      c.className = "chip " + (r.known ? "k" : "u"); c.textContent = r.label; hits.append(c);
+    }
+  }
 }
+let lastHitsKey = "";
 
 /* ---------- live camera ---------- */
 let stream = null, facing = "environment", running = false;
@@ -327,6 +437,277 @@ async function analyzePhoto(file) {
   status(dets.length ? `${dets.length} face${dets.length > 1 ? "s" : ""} found` : "No faces found");
 }
 
+/* ---------- search unsorted photos ---------- */
+const MAX_SIDE = 1024, THUMB_SIDE = 480;
+let refDesc = null, scanned = [], scanToken = 0, scanning = false;
+const ssdOpts = () => new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 });
+const isImage = f => f.type.startsWith("image/") || /\.(jpe?g|png|webp|gif|bmp|heic|heif|avif)$/i.test(f.name);
+
+async function loadScaled(file, max) {
+  const img = await fileToImage(file);
+  const s = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+  const c = document.createElement("canvas");
+  c.width = Math.round(img.naturalWidth * s); c.height = Math.round(img.naturalHeight * s);
+  c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+  URL.revokeObjectURL(img.src);
+  return c;
+}
+
+async function setReference(file) {
+  const note = $("refNote"), box = $("refFaces");
+  if (!modelsReady) { note.textContent = "The face models are still loading. Try again in a moment."; return; }
+  box.textContent = ""; refDesc = null; note.textContent = "Looking for faces…";
+  try {
+    const c = await loadScaled(file, MAX_SIDE);
+    const dets = await faceapi.detectAllFaces(c, ssdOpts()).withFaceLandmarks().withFaceDescriptors();
+    if (!dets.length) { note.textContent = "No face found in that photo. Try a clearer one."; renderResults(); return; }
+    dets.sort((a, b) => b.detection.box.area - a.detection.box.area);
+    dets.forEach((d, i) => {
+      const b = document.createElement("button"); b.type = "button";
+      b.setAttribute("aria-pressed", i === 0); b.setAttribute("aria-label", `Face ${i + 1}`);
+      const im = document.createElement("img"); im.alt = ""; im.src = cropThumb(c, d.detection.box); b.append(im);
+      b.onclick = () => { for (const x of box.children) x.setAttribute("aria-pressed", x === b); refDesc = d.descriptor; renderResults(); };
+      box.append(b);
+    });
+    refDesc = dets[0].descriptor;
+    note.textContent = dets.length > 1 ? `${dets.length} faces in this photo. Tap the one to look for.` : "Face found.";
+    setMode("match"); return;
+  } catch { note.textContent = "Couldn't read that image. Try a JPEG or PNG."; }
+  renderResults();
+}
+
+function scanSummary(extra = "") {
+  const faces = scanned.reduce((n, p) => n + p.faces.length, 0);
+  $("searchStatus").textContent = `${scanned.length} photo${scanned.length === 1 ? "" : "s"} scanned, ${faces} face${faces === 1 ? "" : "s"} found.${extra}`;
+  $("btnClear").hidden = !scanned.length;
+}
+
+async function scanFiles(files) {
+  files = files.filter(isImage);
+  if (!files.length) { $("searchStatus").textContent = "No photos in that selection."; return; }
+  if (!modelsReady) { $("searchStatus").textContent = "The face models are still loading. Try again in a moment."; return; }
+  if (scanning) return;
+  const token = ++scanToken; scanning = true;
+  $("btnStop").hidden = false; $("btnClear").hidden = true; $("progress").hidden = false; $("bar").style.width = "0";
+  let done = 0, skipped = 0;
+  for (const f of files) {
+    if (token !== scanToken) break;
+    try {
+      const c = await loadScaled(f, MAX_SIDE);
+      const dets = await faceapi.detectAllFaces(c, ssdOpts()).withFaceLandmarks().withFaceDescriptors();
+      const ts = Math.min(1, THUMB_SIDE / Math.max(c.width, c.height));
+      const t = document.createElement("canvas");
+      t.width = Math.round(c.width * ts); t.height = Math.round(c.height * ts);
+      t.getContext("2d").drawImage(c, 0, 0, t.width, t.height);
+      const blob = await new Promise(r => t.toBlob(r, "image/jpeg", 0.8));
+      scanned.push({
+        file: f, name: f.webkitRelativePath || f.name, thumb: URL.createObjectURL(blob),
+        faces: dets.map(d => { const b = d.detection.box;
+          return { desc: d.descriptor, box: { x: b.x / c.width, y: b.y / c.height, w: b.width / c.width, h: b.height / c.height } }; }),
+      });
+    } catch { skipped++; }
+    done++;
+    $("bar").style.width = `${(100 * done / files.length).toFixed(1)}%`;
+    $("searchStatus").textContent = `Scanning ${done} of ${files.length}…`;
+    if (done % 10 === 0) renderResults();
+    await new Promise(r => setTimeout(r));
+  }
+  const stopped = token !== scanToken;
+  scanning = false; $("btnStop").hidden = true; $("progress").hidden = true;
+  scanSummary((stopped ? " Stopped early." : "") + (skipped ? ` ${skipped} file${skipped > 1 ? "s" : ""} couldn't be read.` : ""));
+  renderResults();
+}
+
+function boxEl(b, el = document.createElement("div")) {
+  el.className = "fbox";
+  Object.assign(el.style, { left: b.x * 100 + "%", top: b.y * 100 + "%", width: b.w * 100 + "%", height: b.h * 100 + "%" });
+  return el;
+}
+
+let mode = "faces", shown = [];
+function setMode(m) {
+  mode = m;
+  for (const b of $("modeSeg").children) b.setAttribute("aria-pressed", b.dataset.mode === m);
+  $("sthrRow").hidden = m !== "match";
+  renderResults();
+}
+
+function renderResults() {
+  const grid = $("results"), msg = $("matchCount"); grid.textContent = ""; shown = [];
+  const withFaces = scanned.filter(p => p.faces.length).length;
+  $("cntFaces").textContent = scanned.length ? ` (${withFaces})` : "";
+  $("cntNo").textContent = scanned.length ? ` (${scanned.length - withFaces})` : "";
+  $("btnZip").hidden = true;
+  if (!scanned.length) { msg.textContent = "Select photos to sort them."; return; }
+  let items;
+  if (mode === "match") {
+    if (!refDesc) { msg.textContent = "Choose a photo of the person above to see where they appear."; return; }
+    const thr = parseFloat($("sthr").value); items = [];
+    for (const p of scanned) {
+      let best = null;
+      for (const fc of p.faces) {
+        const d = faceapi.euclideanDistance(refDesc, fc.desc);
+        if (d < thr && (!best || d < best.d)) best = { d, box: fc.box };
+      }
+      if (best) items.push({ p, d: best.d, boxes: [best.box], label: (1 - best.d).toFixed(2) });
+    }
+    items.sort((a, b) => a.d - b.d);
+    msg.textContent = items.length
+      ? `${items.length} of ${scanned.length} photos show this person, best first. The number is similarity (higher is closer).`
+      : `No matches in ${scanned.length} photos. Try moving the slider toward Loose.`;
+  } else if (mode === "faces") {
+    items = scanned.filter(p => p.faces.length)
+      .map(p => ({ p, boxes: p.faces.map(f => f.box), label: `${p.faces.length} face${p.faces.length > 1 ? "s" : ""}` }));
+    msg.textContent = `${items.length} of ${scanned.length} photos show at least one face.`;
+  } else {
+    items = scanned.filter(p => !p.faces.length).map(p => ({ p, boxes: [], label: "" }));
+    msg.textContent = `${items.length} of ${scanned.length} photos have no visible face.`;
+  }
+  shown = items; $("btnZip").hidden = !items.length || scanning;
+  for (const it of items) {
+    const btn = document.createElement("button"); btn.type = "button"; btn.className = "hit";
+    const pic = document.createElement("div"); pic.className = "pic";
+    const img = document.createElement("img"); img.alt = it.p.name; img.src = it.p.thumb; img.loading = "lazy";
+    pic.append(img, ...it.boxes.map(b => boxEl(b)));
+    const cap = document.createElement("div"); cap.className = "cap";
+    const n = document.createElement("span"); n.className = "fn"; n.textContent = it.p.name.split("/").pop();
+    const s = document.createElement("span"); s.className = "sc"; s.textContent = it.label;
+    cap.append(n, s); btn.append(pic, cap);
+    btn.onclick = () => openLightbox(it);
+    grid.append(btn);
+  }
+}
+
+let lbUrl = null;
+function openLightbox(it) {
+  showPhoto(URL.createObjectURL(it.p.file), it.p.name, it.boxes, true);
+}
+function showPhoto(src, name, boxes, revoke) {
+  if (lbUrl) URL.revokeObjectURL(lbUrl);
+  lbUrl = revoke ? src : null;
+  const pic = $("lbPic"); pic.querySelectorAll(".fbox").forEach(e => e.remove());
+  $("lbImg").src = src; $("lbName").textContent = name;
+  pic.append(...boxes.filter(Boolean).map(b => boxEl(b)));
+  $("lb").hidden = false; $("lbClose").focus();
+}
+
+/* ---------- reference pool (faces without names) ---------- */
+const JSZIP_URL = "https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js";
+const IMG_RE = /\.(jpe?g|png|webp|gif|bmp|avif)$/i;
+let pool = [], poolIndex = [];
+function rebuildPool() {
+  poolIndex = [];
+  for (const p of pool) for (const f of p.faces) poolIndex.push({ desc: new Float32Array(f.desc), box: f.box, photo: p });
+  lastHitsKey = "";
+  rebuildMatcher();
+}
+function renderPool() {
+  $("poolCount").textContent = pool.length
+    ? `${pool.length} photo${pool.length === 1 ? "" : "s"}, ${poolIndex.length} face${poolIndex.length === 1 ? "" : "s"} in the pool.`
+    : "The pool is empty.";
+  const g = $("poolGrid"); g.textContent = "";
+  const recent = pool.slice(-48).reverse();
+  for (const p of recent) {
+    const im = document.createElement("img"); im.alt = p.name; im.title = p.name; im.src = p.thumb; im.loading = "lazy";
+    im.onclick = () => showPhoto(p.thumb, p.name, p.faces.map(f => f.box), false);
+    g.append(im);
+  }
+  if (pool.length > recent.length) {
+    const more = document.createElement("span"); more.className = "note";
+    more.textContent = `+${pool.length - recent.length} more`; g.append(more);
+  }
+  $("btnPoolClear").hidden = !pool.length;
+}
+async function addToPool(files) {
+  const log = $("poolLog");
+  if (!modelsReady) { log.textContent = "The face models are still loading. Try again in a moment."; return; }
+  const list = [];
+  for (const f of files) {
+    if (/\.zip$/i.test(f.name) || /zip/.test(f.type)) {
+      log.textContent = `Opening ${f.name}…`;
+      try {
+        if (typeof JSZip === "undefined") await loadScript(JSZIP_URL);
+        const z = await JSZip.loadAsync(f);
+        for (const e of Object.values(z.files))
+          if (!e.dir && IMG_RE.test(e.name) && !e.name.includes("__MACOSX"))
+            list.push({ name: e.name.split("/").pop(), get: () => e.async("blob") });
+      } catch { log.textContent = `Couldn't open ${f.name}. Check the internet connection and try again.`; return; }
+    } else if (isImage(f)) list.push({ name: f.name, get: async () => f });
+  }
+  if (!list.length) { log.textContent = "No photos found in that selection."; return; }
+  const known = new Set(pool.map(p => p.name));
+  let added = 0, faces = 0, noFace = 0, dup = 0, bad = 0;
+  for (let i = 0; i < list.length; i++) {
+    const it = list[i];
+    log.textContent = `Adding ${i + 1} of ${list.length}…`;
+    if (known.has(it.name)) { dup++; continue; }
+    try {
+      const c = await loadScaled(await it.get(), MAX_SIDE);
+      const dets = await faceapi.detectAllFaces(c, ssdOpts()).withFaceLandmarks().withFaceDescriptors();
+      if (!dets.length) { noFace++; continue; }
+      const ts = Math.min(1, 400 / Math.max(c.width, c.height)), t = document.createElement("canvas");
+      t.width = Math.round(c.width * ts); t.height = Math.round(c.height * ts);
+      t.getContext("2d").drawImage(c, 0, 0, t.width, t.height);
+      const entry = {
+        id: crypto.randomUUID(), name: it.name, thumb: t.toDataURL("image/jpeg", 0.78),
+        faces: dets.map(d => { const b = d.detection.box;
+          return { desc: Array.from(d.descriptor), box: { x: b.x / c.width, y: b.y / c.height, w: b.width / c.width, h: b.height / c.height } }; }),
+      };
+      await DB.put(entry, "pool"); pool.push(entry); known.add(it.name);
+      added++; faces += dets.length;
+    } catch { bad++; }
+    if (i % 20 === 19) { rebuildPool(); renderPool(); }
+    await new Promise(r => setTimeout(r));
+  }
+  rebuildPool(); renderPool();
+  log.textContent = `Added ${added} photo${added === 1 ? "" : "s"} (${faces} face${faces === 1 ? "" : "s"}).`
+    + (noFace ? ` ${noFace} had no face and were skipped.` : "")
+    + (dup ? ` ${dup} were already in the pool.` : "")
+    + (bad ? ` ${bad} couldn't be read.` : "");
+}
+async function clearPool() {
+  const b = $("btnPoolClear");
+  if (b.dataset.armed !== "1") { b.dataset.armed = "1"; b.textContent = "Tap again to clear";
+    setTimeout(() => { b.dataset.armed = ""; b.textContent = "Clear pool"; }, 3000); return; }
+  b.dataset.armed = ""; b.textContent = "Clear pool";
+  await DB.clear("pool"); pool = []; rebuildPool(); renderPool(); $("poolLog").textContent = "Pool cleared.";
+}
+
+function loadScript(src) {
+  return new Promise((res, rej) => { const s = document.createElement("script");
+    s.src = src; s.onload = res; s.onerror = rej; document.head.append(s); });
+}
+async function saveZip() {
+  const btn = $("btnZip"), items = shown.slice(), label = btn.textContent;
+  if (!items.length) return;
+  btn.disabled = true; btn.textContent = "Preparing…";
+  try {
+    if (typeof JSZip === "undefined") await loadScript(JSZIP_URL);
+    const zip = new JSZip(), used = new Set();
+    for (const it of items) {
+      let name = it.p.file.name, i = 1;
+      while (used.has(name)) name = it.p.file.name.replace(/(\.[^.]*)?$/, ext => `_${i++}${ext}`);
+      used.add(name); zip.file(name, it.p.file);
+    }
+    const blob = await zip.generateAsync({ type: "blob", compression: "STORE" },
+      m => { btn.textContent = `Packing ${m.percent.toFixed(0)}%`; });
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+    a.download = `${{ faces: "with-faces", nofaces: "no-faces", match: "person" }[mode]}-${new Date().toISOString().slice(0, 10)}.zip`;
+    document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+  } catch {
+    $("matchCount").textContent = "Couldn't create the ZIP. Check the internet connection, or save fewer photos at once.";
+  }
+  btn.disabled = false; btn.textContent = label;
+}
+function closeLightbox() {
+  $("lb").hidden = true; $("lbImg").removeAttribute("src");
+  if (lbUrl) URL.revokeObjectURL(lbUrl); lbUrl = null;
+}
+function clearScanned() {
+  for (const p of scanned) URL.revokeObjectURL(p.thumb);
+  scanned = []; $("searchStatus").textContent = "Cleared."; $("btnClear").hidden = true; renderResults();
+}
+
 /* ---------- backup ---------- */
 function exportBackup() {
   const blob = new Blob([JSON.stringify({ app: "family-faces", version: 1, people }, null, 0)], { type: "application/json" });
@@ -352,13 +733,27 @@ async function importBackup(file) {
 
 /* ---------- wiring ---------- */
 function tab(name) {
-  for (const t of ["scan", "people"]) {
+  for (const t of ["scan", "search", "people"]) {
     $("v-" + t).hidden = t !== name; $("t-" + t).setAttribute("aria-selected", t === name);
   }
   if (name !== "scan") stopCam();
 }
 $("t-scan").onclick = () => tab("scan");
 $("t-people").onclick = () => tab("people");
+$("t-search").onclick = () => tab("search");
+$("refInput").onchange = e => { const f = e.target.files[0]; if (f) setReference(f); e.target.value = ""; };
+$("searchInput").onchange = e => { const fs = [...e.target.files]; e.target.value = ""; if (fs.length) scanFiles(fs); };
+$("dirInput").onchange = e => { const fs = [...e.target.files]; e.target.value = ""; if (fs.length) scanFiles(fs); };
+$("btnStop").onclick = () => { scanToken++; };
+$("btnClear").onclick = clearScanned;
+$("btnZip").onclick = saveZip;
+$("poolInput").onchange = e => { const fs = [...e.target.files]; e.target.value = ""; if (fs.length) addToPool(fs); };
+$("btnPoolClear").onclick = clearPool;
+for (const b of $("modeSeg").children) b.onclick = () => setMode(b.dataset.mode);
+$("sthr").oninput = () => { $("sthrVal").textContent = parseFloat($("sthr").value).toFixed(2); renderResults(); };
+$("lbClose").onclick = closeLightbox;
+$("lb").onclick = e => { if (e.target === $("lb") || e.target.classList.contains("lbstage")) closeLightbox(); };
+document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("lb").hidden) closeLightbox(); });
 $("btnCam").onclick = () => running ? stopCam() : startCam();
 $("btnFlip").onclick = () => { facing = facing === "user" ? "environment" : "user"; startCam(); };
 $("snapInput").onchange = e => { const f = e.target.files[0]; if (f) analyzePhoto(f); e.target.value = ""; };
@@ -370,7 +765,10 @@ document.addEventListener("visibilitychange", () => { if (document.hidden) stopC
 
 (async () => {
   try { people = await DB.all(); } catch { people = []; }
+  try { pool = await DB.all("pool"); } catch { pool = []; }
   renderPeople();
+  if (typeof faceapi !== "undefined") rebuildPool();
+  renderPool();
   if (typeof faceapi === "undefined") { status("Library failed to load"); return; }
   loadModels();
 })();
