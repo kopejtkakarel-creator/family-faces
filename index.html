@@ -359,9 +359,9 @@ function draw(source, results) {
   for (const r of results) {
     let x = ox + r.box.x * k; const y = oy + r.box.y * k, w = r.box.width * k, h = r.box.height * k;
     if (mirror) x = W - x - w;
-    const col = r.known ? css("--known") : css("--unknown");
+    const col = r.pending ? css("--muted") : r.known ? css("--known") : css("--unknown");
     ctx.lineWidth = 3; ctx.strokeStyle = col; ctx.strokeRect(x, y, w, h);
-    const text = r.known ? `${r.label} ${(1 - r.dist).toFixed(2)}` : "Unknown";
+    const text = r.pending ? "Checking…" : r.known ? `${r.label} ${(1 - r.dist).toFixed(2)}` : "Unknown";
     ctx.font = "700 15px system-ui,sans-serif";
     const tw = ctx.measureText(text).width + 12, ty = y > 26 ? y - 24 : y + h;
     ctx.fillStyle = col; ctx.fillRect(x - 1.5, ty, tw, 24);
@@ -382,7 +382,7 @@ function draw(source, results) {
       hits.append(c);
     } else {
       const c = document.createElement("span");
-      c.className = "chip " + (r.known ? "k" : "u"); c.textContent = r.label; hits.append(c);
+      c.className = "chip " + (r.pending ? "" : r.known ? "k" : "u"); c.textContent = r.label; hits.append(c);
     }
   }
 }
@@ -412,16 +412,79 @@ function stopCam() {
 }
 async function loop() {
   const v = $("video");
-  const opts = new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.5 });
+  const opts = new faceapi.TinyFaceDetectorOptions({ inputSize: 512, scoreThreshold: 0.45 });
+  tracks = []; lastHitsKey = "";
   while (running) {
     if (v.readyState >= 2) {
       const dets = await faceapi.detectAllFaces(v, opts).withFaceLandmarks().withFaceDescriptors();
       if (!running) break;
-      draw(v, describe(dets));
+      draw(v, updateTracks(v, dets));
     }
     await new Promise(r => requestAnimationFrame(r));
   }
   draw($("video"), []);
+}
+
+/* ---------- tracking: steadier results for moving people ---------- */
+// Each face is followed across frames. Blurry frames get a box but no vote;
+// the label is the majority of the last WINDOW sharp frames.
+const WINDOW = 8, MAX_MISSED = 8, MIN_SHARP = 10, MIN_VOTES = 2;
+let tracks = [], nextTrackId = 1;
+const sharpCanvas = document.createElement("canvas"); sharpCanvas.width = sharpCanvas.height = 64;
+const sharpCtx = sharpCanvas.getContext("2d", { willReadFrequently: true });
+
+function sharpness(src, b) {          // variance of the Laplacian on a 64×64 grey crop
+  sharpCtx.drawImage(src, b.x, b.y, b.width, b.height, 0, 0, 64, 64);
+  const d = sharpCtx.getImageData(0, 0, 64, 64).data, g = new Float32Array(4096);
+  for (let i = 0; i < 4096; i++) g[i] = 0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2];
+  let sum = 0, sum2 = 0, n = 0;
+  for (let y = 1; y < 63; y++) for (let x = 1; x < 63; x++) {
+    const i = y * 64 + x, l = g[i - 1] + g[i + 1] + g[i - 64] + g[i + 64] - 4 * g[i];
+    sum += l; sum2 += l * l; n++;
+  }
+  const m = sum / n; return sum2 / n - m * m;
+}
+function iou(a, b) {
+  const x1 = Math.max(a.x, b.x), y1 = Math.max(a.y, b.y);
+  const x2 = Math.min(a.x + a.width, b.x + b.width), y2 = Math.min(a.y + a.height, b.y + b.height);
+  const inter = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
+  return inter / (a.width * a.height + b.width * b.height - inter || 1);
+}
+function updateTracks(src, dets) {
+  for (const t of tracks) t.missed++;
+  const pairs = [];
+  dets.forEach((d, i) => { for (const t of tracks) { const v = iou(d.detection.box, t.box); if (v > 0.2) pairs.push({ i, t, v }); } });
+  pairs.sort((a, b) => b.v - a.v);
+  const assigned = new Map(), taken = new Set();
+  for (const p of pairs) if (!assigned.has(p.i) && !taken.has(p.t)) { assigned.set(p.i, p.t); taken.add(p.t); }
+  dets.forEach((d, i) => {
+    const b = d.detection.box;
+    let t = assigned.get(i);
+    if (!t) { t = { id: nextTrackId++, box: { x: b.x, y: b.y, width: b.width, height: b.height }, votes: [], maxSharp: 0 }; tracks.push(t); }
+    else for (const k of ["x", "y", "width", "height"]) t.box[k] += (b[k] - t.box[k]) * 0.6;
+    t.missed = 0;
+    let s = 0; try { s = sharpness(src, b); } catch {}
+    t.maxSharp = Math.max(t.maxSharp * 0.98, s);
+    if (s >= Math.max(MIN_SHARP, 0.5 * t.maxSharp)) {
+      const r = describe([d])[0];
+      t.votes.push({ key: r.pool ? "p:" + r.pool.id : r.known ? "n:" + r.label : "u", r });
+      if (t.votes.length > WINDOW) t.votes.shift();
+    }
+  });
+  tracks = tracks.filter(t => t.missed <= MAX_MISSED);
+  return tracks.filter(t => t.missed <= 2).map(trackResult);
+}
+function trackResult(t) {
+  const box = t.box;
+  if (!t.votes.length) return { box, pending: true, known: false, label: "Checking…", dist: 1 };
+  const counts = new Map();
+  for (const v of t.votes) counts.set(v.key, (counts.get(v.key) || 0) + 1);
+  let bestKey = "u", bestN = counts.get("u") || 0;
+  for (const [k, n] of counts) if (k !== "u" && n > bestN) { bestKey = k; bestN = n; }
+  if (bestKey === "u") return { box, known: false, label: "Unknown", dist: 1 };
+  if (bestN < MIN_VOTES) return { box, pending: true, known: false, label: "Checking…", dist: 1 };
+  const best = t.votes.filter(v => v.key === bestKey).reduce((a, b) => (a.r.dist <= b.r.dist ? a : b)).r;
+  return { ...best, box };
 }
 
 /* ---------- single photo ---------- */
